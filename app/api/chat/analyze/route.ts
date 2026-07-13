@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGeminiClient, GEMINI_MODEL, isGeminiQuotaError } from "@/lib/groq";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { AppLanguage, ResponseMode, SchoolLevel } from "@/lib/types";
+
+declare const groq: any;
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ const QUOTA_MESSAGE =
 // Analyse un document (image ou PDF de cours) envoyé par l'élève : explication, résumé,
 // génération d'exercices ou de quiz à partir du contenu.
 export async function POST(req: NextRequest) {
-  const gemini = getGeminiClient();
+  const gemini = (groq as any).getGeminiClient?.();
   if (!gemini) {
     return NextResponse.json({ error: "GEMINI_API_KEY manquante côté serveur." }, { status: 500 });
   }
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   const systemPrompt = buildSystemPrompt(level, language, responseMode);
-  const model = gemini.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: systemPrompt });
+  const model = gemini.getGenerativeModel({ model: (groq as any).GEMINI_MODEL, systemInstruction: systemPrompt });
   const bytes = Buffer.from(await file.arrayBuffer());
 
   try {
@@ -41,7 +42,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (file.type === "application/pdf") {
-      const pdfParse = (await import("pdf-parse")).default;
+      // Import pdf-parse dynamically and avoid TypeScript missing declaration error by
+      // treating the import as any. Use .default if available.
+      const _pdfParseModule = (await import("pdf-parse")) as any;
+      const pdfParse = _pdfParseModule.default ?? _pdfParseModule;
       const parsed = await pdfParse(bytes);
       const excerpt = parsed.text.slice(0, 15000);
 
@@ -52,9 +56,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: "Type de fichier non supporté." }, { status: 400 });
-  } catch (err) {
+    } catch (err) {
     console.error("Erreur d'analyse de document:", err);
-    const message = isGeminiQuotaError(err) ? QUOTA_MESSAGE : "Erreur lors de l'analyse du document.";
-    return NextResponse.json({ error: message }, { status: isGeminiQuotaError(err) ? 429 : 500 });
+    const message = (groq as any).isGeminiQuotaError?.(err) ? QUOTA_MESSAGE : "Erreur lors de l'analyse du document.";
+    return NextResponse.json({ error: message }, { status: (groq as any).isGeminiQuotaError?.(err) ? 429 : 500 });
   }
 }
