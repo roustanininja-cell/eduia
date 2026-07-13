@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { client, GROQ_MODEL } from "@/lib/groq";
+import { client, GROQ_MODEL } from "@/lib/gemini";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { AppLanguage, ResponseMode, SchoolLevel } from "@/lib/types";
 
