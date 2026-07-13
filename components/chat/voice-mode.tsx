@@ -16,8 +16,20 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   const [transcript, setTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const langCode = preferences.language === "ar" ? "ar-SA" : preferences.language === "en" ? "en-US" : "fr-FR";
+
+  // Charger les voix système disponibles
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      const updateVoices = () => {
+        setVoices(window.speechSynthesis.getVoices());
+      };
+      updateVoices();
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+  }, []);
 
   const stopEverything = () => {
     try {
@@ -36,7 +48,34 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
     
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = langCode;
+    
+    // Essayer de trouver la voix la plus proche de Jarvis
+    let selectedVoice = null;
+
+    if (preferences.language === "en") {
+      // Pour l'anglais, on cherche une voix britannique masculine (en-GB)
+      selectedVoice = voices.find(v => 
+        v.lang.startsWith("en-GB") && 
+        (v.name.toLowerCase().includes("male") || v.name.toLowerCase().includes("natural"))
+      ) || voices.find(v => v.lang.startsWith("en-GB"));
+    } else if (preferences.language === "fr") {
+      // Pour le français, on cherche une voix masculine classe (comme "Thomas" ou Google/Microsoft Male)
+      selectedVoice = voices.find(v => 
+        v.lang.startsWith("fr-FR") && 
+        (v.name.toLowerCase().includes("thomas") || v.name.toLowerCase().includes("male") || v.name.toLowerCase().includes("dénégocié"))
+      ) || voices.find(v => v.lang.startsWith("fr-FR"));
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    } else {
+      utterance.lang = langCode;
+    }
+
+    // Effet sonore Jarvis : un tout petit peu plus grave et posé
+    utterance.pitch = 0.88; // Voix légèrement plus grave
+    utterance.rate = 1.05;  // Élocution légèrement plus dynamique et précise
+    
     utterance.onend = () => setState("idle");
     utteranceRef.current = utterance;
     setState("speaking");
@@ -53,12 +92,15 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       createdAt: new Date().toISOString()
     });
 
+    // Instructions de personnalité pour Jarvis
+    const jarvisPrompt = `[Consigne système : Agis comme JARVIS d'Iron Man. Tu es un assistant virtuel ultra-intelligent, extrêmement poli, calme et sarcastique à la fois. Réponds de manière très concise (2 phrases maximum). Adresse-toi à l'utilisateur en l'appelant "Monsieur" ou "Sir". Réponds directement à la question suivante :] ${question}`;
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [{ role: "user", content: question }],
+          messages: [{ role: "user", content: jarvisPrompt }],
           level: preferences.level,
           language: preferences.language,
           responseMode: "courte"
@@ -81,7 +123,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       });
       speak(full);
     } catch (err) {
-      toast.error("Impossible de contacter l'assistant vocal.");
+      toast.error("Impossible de contacter Jarvis.");
       setState("idle");
     }
   };
@@ -91,7 +133,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast.error("La reconnaissance vocale n'est pas supportée par ce navigateur ou est bloquée par vos paramètres de confidentialité (Brave Shields).");
+      toast.error("La reconnaissance vocale est bloquée par vos paramètres de confidentialité (Brave Shields).");
       return;
     }
     
@@ -113,9 +155,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
         if (event.error === "not-allowed") {
-          toast.error("Accès micro refusé. Veuillez vérifier les permissions de votre navigateur.");
-        } else if (event.error === "network") {
-          toast.error("Erreur réseau de reconnaissance vocale.");
+          toast.error("Accès micro refusé. Activez-le dans votre navigateur.");
         }
         stopEverything();
       };
@@ -176,10 +216,10 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
           onClick={handleMicPress}
           className={cn(
             "relative flex h-28 w-28 items-center justify-center rounded-full text-primary-foreground shadow-lg transition-colors",
-            state === "listening" && "bg-primary",
-            state === "speaking" && "bg-emerald-500",
+            state === "listening" && "bg-blue-600", // Bleu Jarvis !
+            state === "speaking" && "bg-cyan-500",
             state === "thinking" && "bg-muted-foreground animate-pulse",
-            state === "idle" && "bg-primary/80 hover:bg-primary"
+            state === "idle" && "bg-blue-500 hover:bg-blue-600"
           )}
         >
           <Mic className="h-10 w-10" />
@@ -187,10 +227,10 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       </div>
 
       <p className="mt-8 max-w-sm text-center text-sm text-muted-foreground px-4">
-        {state === "idle" && "Appuie sur le micro pour parler à EduIA"}
-        {state === "listening" && (transcript || "Je t'écoute…")}
-        {state === "thinking" && "EduIA réfléchit…"}
-        {state === "speaking" && "EduIA te répond — appuie pour l'interrompre"}
+        {state === "idle" && "Appuyez sur le micro pour parler à Jarvis"}
+        {state === "listening" && (transcript || "À votre écoute, Monsieur…")}
+        {state === "thinking" && "Jarvis analyse votre demande…"}
+        {state === "speaking" && "Jarvis vous répond — appuyez pour l'interrompre"}
       </p>
     </div>
   );
