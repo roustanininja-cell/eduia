@@ -20,12 +20,20 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   const langCode = preferences.language === "ar" ? "ar-SA" : preferences.language === "en" ? "en-US" : "fr-FR";
 
   const stopEverything = () => {
-    recognitionRef.current?.stop();
-    window.speechSynthesis.cancel();
+    try {
+      recognitionRef.current?.stop();
+    } catch (e) {
+      console.log("Recognition stop ignored", e);
+    }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     setState("idle");
   };
 
   const speak = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = langCode;
@@ -79,31 +87,59 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   };
 
   const startListening = () => {
+    if (typeof window === "undefined") return;
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast.error("La reconnaissance vocale n'est pas supportée par ce navigateur.");
+      toast.error("La reconnaissance vocale n'est pas supportée par ce navigateur ou est bloquée par vos paramètres de confidentialité (Brave Shields).");
       return;
     }
-    window.speechSynthesis.cancel();
-    const recognition = new SpeechRecognition();
-    recognition.lang = langCode;
-    recognition.continuous = false;
-    recognition.interimResults = true;
+    
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
 
-    recognition.onresult = (event: any) => {
-      const text = Array.from(event.results).map((r: any) => r[0].transcript).join("");
-      setTranscript(text);
-    };
-    recognition.onend = () => {
-      setTranscript((current) => {
-        if (current.trim()) askAssistant(current.trim());
-        return current;
-      });
-    };
-    recognition.start();
-    recognitionRef.current = recognition;
-    setTranscript("");
-    setState("listening");
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = langCode;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onresult = (event: any) => {
+        const text = Array.from(event.results).map((r: any) => r[0].transcript).join("");
+        setTranscript(text);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === "not-allowed") {
+          toast.error("Accès micro refusé. Veuillez vérifier les permissions de votre navigateur.");
+        } else if (event.error === "network") {
+          toast.error("Erreur réseau de reconnaissance vocale.");
+        }
+        stopEverything();
+      };
+
+      recognition.onend = () => {
+        setTranscript((current) => {
+          if (current.trim()) {
+            askAssistant(current.trim());
+          } else {
+            setState("idle");
+          }
+          return current;
+        });
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+      setTranscript("");
+      setState("listening");
+    } catch (e) {
+      console.error("Failed to start recognition:", e);
+      toast.error("Impossible d'activer le micro.");
+      setState("idle");
+    }
   };
 
   useEffect(() => {
@@ -113,8 +149,9 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
 
   const handleMicPress = () => {
     if (state === "speaking") {
-      // Interrompre l'IA pour reprendre la parole
-      window.speechSynthesis.cancel();
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
       startListening();
       return;
     }
@@ -133,7 +170,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
 
       <div className="relative flex h-40 w-40 items-center justify-center">
         {(state === "listening" || state === "speaking") && (
-          <span className="absolute inline-flex h-full w-full rounded-full bg-primary/30 animate-pulse-ring" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-primary/30 animate-pulse-ring animate-ping" />
         )}
         <button
           onClick={handleMicPress}
@@ -141,7 +178,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
             "relative flex h-28 w-28 items-center justify-center rounded-full text-primary-foreground shadow-lg transition-colors",
             state === "listening" && "bg-primary",
             state === "speaking" && "bg-emerald-500",
-            state === "thinking" && "bg-muted-foreground",
+            state === "thinking" && "bg-muted-foreground animate-pulse",
             state === "idle" && "bg-primary/80 hover:bg-primary"
           )}
         >
@@ -149,7 +186,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <p className="mt-8 max-w-sm text-center text-sm text-muted-foreground">
+      <p className="mt-8 max-w-sm text-center text-sm text-muted-foreground px-4">
         {state === "idle" && "Appuie sur le micro pour parler à EduIA"}
         {state === "listening" && (transcript || "Je t'écoute…")}
         {state === "thinking" && "EduIA réfléchit…"}
