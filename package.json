@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@radix-ui/react-avatar": "^1.1.0",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-dropdown-menu": "^2.1.1",
@@ -53,6 +55,7 @@
   },
   "devDependencies": {
     "@types/katex": "^0.16.7",
+    "@types/pdf-parse": "^1.1.5",
     "eslint": "^8.57.0",
     "eslint-config-next": "15.0.3"
   }
